@@ -23,12 +23,7 @@ final class ActionPlan {
             throw new IllegalArgumentException("Missing or oversized model output.");
         }
         // Do not scrape executable JSON out of surrounding model prose or reasoning.
-        JSONTokener tokener = new JSONTokener(output.trim());
-        Object rootValue = tokener.nextValue();
-        if (!(rootValue instanceof JSONObject) || tokener.nextClean() != 0) {
-            throw new IllegalArgumentException("Expected a single JSON object, without extra text.");
-        }
-        JSONObject root = (JSONObject) rootValue;
+        JSONObject root = extractPlanObject(output);
         if (root.length() != 2 || !root.has("actions") || !root.has("reply")) {
             throw new IllegalArgumentException("Expected exactly actions and reply.");
         }
@@ -57,5 +52,96 @@ final class ActionPlan {
         }
         ActionValidator.validateAll(actions, command, ZonedDateTime.now());
         return new ActionPlan(actions, (String) replyValue);
+    }
+
+    private static JSONObject extractPlanObject(String output) throws Exception {
+    String trimmed = output.trim();
+
+    // Fast path: model returned clean JSON.
+    try {
+        JSONTokener tokener = new JSONTokener(trimmed);
+        Object value = tokener.nextValue();
+
+        if (value instanceof JSONObject && tokener.nextClean() == 0) {
+            return (JSONObject) value;
+        }
+    } catch (RuntimeException ignored) {
+        // Try extracting JSON from surrounding prose/markdown.
+    }
+
+    // Nemotron may return things like:
+    // "Here is the JSON:" or ```json ... ```
+    for (int start = 0; start < trimmed.length(); start++) {
+
+        if (trimmed.charAt(start) != '{') {
+            continue;
+        }
+
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+
+        for (int i = start; i < trimmed.length(); i++) {
+
+            char c = trimmed.charAt(i);
+
+            if (inString) {
+
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+
+                continue;
+            }
+
+            if (c == '"') {
+                inString = true;
+                continue;
+            }
+
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+
+                depth--;
+
+                if (depth == 0) {
+
+                    String candidate =
+                            trimmed.substring(start, i + 1);
+
+                    try {
+
+                        JSONObject object =
+                                new JSONObject(candidate);
+
+                        if (object.length() == 2
+                                && object.has("actions")
+                                && object.has("reply")) {
+
+                            return object;
+                        }
+
+                    } catch (RuntimeException ignored) {
+                        // Continue looking.
+                    }
+
+                    break;
+                }
+
+                if (depth < 0) {
+                    break;
+                }
+            }
+        }
+    }
+
+    throw new IllegalArgumentException(
+            "Could not find a valid MagBot JSON object in the model response."
+    );
     }
 }
