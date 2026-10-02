@@ -1,0 +1,38 @@
+PASS accept: next morning alarm
+PASS accept: time-only alarm
+PASS accept: midnight alarm
+PASS reject: hour range
+PASS reject: minute range
+PASS reject: fractional hour
+PASS reject: string instead of integer
+PASS reject: future dated alarm unsupported
+PASS reject: tomorrow evening is not next occurrence
+PASS reject: bad alarm date
+PASS accept: timer
+PASS accept: one day timer
+PASS reject: zero timer
+PASS reject: negative timer
+PASS reject: oversized timer
+PASS reject: missing timer argument
+PASS reject: arbitrary shell argument
+PASS accept: calendar event
+PASS reject: reversed calendar times
+PASS reject: past calendar event
+PASS reject: UTC suffix in local event
+PASS accept: Keep note
+PASS reject: empty note
+PASS reject: oversized note
+PASS reject: null note text
+PASS accept: named WhatsApp recipient
+PASS accept: supplied international number
+PASS reject: invented phone number
+PASS reject: missing WhatsApp recipient
+PASS reject: empty WhatsApp message
+PASS reject: phone is not digits
+PASS reject: unsupported tool
+PASS reject: arbitrary app launch
+PASS: valid two-action batch
+PASS: oversized batch rejected
+PASS: empty clarification plan and prompt smoke check
+
+37 JVM policy checks passed.

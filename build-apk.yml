@@ -1,0 +1,85 @@
+name: Build MagBot APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the project
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Java 17
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Gradle 8.9
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+          dependency-graph: disabled
+          cache-disabled: true
+
+      - name: Prepare Android SDK components
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK_ROOT" ] || [ ! -d "$SDK_ROOT" ]; then
+            echo 'The hosted runner has no Android SDK. Check the runner image.' >&2
+            exit 1
+          fi
+          SDK_MANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDK_MANAGER" ]; then
+            SDK_MANAGER="$(find "$SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -n 1)"
+          fi
+          test -x "$SDK_MANAGER"
+          # This accepts the SDK licenses on the disposable build runner only.
+          set +o pipefail
+          yes | "$SDK_MANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null
+          SDK_STATUS=${PIPESTATUS[1]}
+          set -o pipefail
+          test "$SDK_STATUS" -eq 0
+          "$SDK_MANAGER" --sdk_root="$SDK_ROOT" 'platforms;android-35' 'build-tools;34.0.0'
+          printf 'sdk.dir=%s\n' "$SDK_ROOT" > MagBot/local.properties
+          printf 'SDK_FOR_VERIFY=%s\n' "$SDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Run the core checks
+        working-directory: MagBot
+        run: bash tests/run-core-tests.sh
+
+      - name: Compile and debug-sign the APK
+        working-directory: MagBot
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Verify signing and collect the APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          cp MagBot/app/build/outputs/apk/debug/app-debug.apk output/MagBot-v0.2-test.apk
+          "$SDK_FOR_VERIFY/build-tools/34.0.0/apksigner" verify --verbose --print-certs \
+            output/MagBot-v0.2-test.apk | tee output/APK-signature-check.txt
+          "$SDK_FOR_VERIFY/build-tools/34.0.0/zipalign" -c -v 4 \
+            output/MagBot-v0.2-test.apk > output/APK-alignment-check.txt
+          (cd output && sha256sum MagBot-v0.2-test.apk > SHA256SUMS.txt)
+          cp INSTALL_APK.md output/INSTALL_APK.md
+
+      - name: Save the installable APK as a downloadable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MagBot-APK-test-build
+          path: output/
+          if-no-files-found: error
+          retention-days: 7
