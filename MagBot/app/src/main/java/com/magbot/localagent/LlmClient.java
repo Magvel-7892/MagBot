@@ -35,7 +35,6 @@ final class LlmClient {
         body.put("temperature", 0.0);
         body.put("max_tokens", 512);
         body.put("stream", false);
-        body.put("response_format", new JSONObject().put("type", "json_object"));
         JSONArray messages = new JSONArray();
         messages.put(new JSONObject().put("role", "system").put("content", AgentProtocol.systemPrompt()));
         messages.put(new JSONObject().put("role", "user").put("content", command));
